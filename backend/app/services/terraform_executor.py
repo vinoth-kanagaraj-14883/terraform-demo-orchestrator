@@ -35,7 +35,8 @@ class TerraformExecutor:
     def plan(self, variables: dict) -> subprocess.CompletedProcess:
         var_args = []
         for key, value in variables.items():
-            var_args += ["-var", f"{key}={value}"]
+            if value not in (None, ""):
+                var_args += ["-var", f"{key}={value}"]
         plan_file = str(self.state_dir.resolve() / "tfplan")
         result = self._run(["plan", "-out", plan_file] + var_args)
         return result
@@ -48,7 +49,8 @@ class TerraformExecutor:
     def destroy(self, variables: dict) -> subprocess.CompletedProcess:
         var_args = []
         for key, value in variables.items():
-            var_args += ["-var", f"{key}={value}"]
+            if value is not None and value != "":
+                var_args += ["-var", f"{key}={value}"]
         state_file = str(self.state_dir.resolve() / "terraform.tfstate")
         result = self._run(
             ["destroy", "-auto-approve", f"-state={state_file}"] + var_args

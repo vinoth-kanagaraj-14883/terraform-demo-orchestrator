@@ -1,0 +1,67 @@
+{{- if .Values.frontend.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "site24x7-labs.fullname" . }}-frontend-nginx
+  labels:
+    {{- include "site24x7-labs.labels" . | nindent 4 }}
+    app.kubernetes.io/component: frontend
+data:
+  nginx.conf: |
+    server {
+        listen 80;
+        server_name _;
+
+        root /usr/share/nginx/html;
+        index index.html;
+
+        add_header X-Frame-Options "SAMEORIGIN" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header X-XSS-Protection "1; mode=block" always;
+        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+
+        gzip on;
+        gzip_vary on;
+        gzip_min_length 1024;
+        gzip_types text/plain text/css application/json application/javascript text/xml application/xml text/javascript image/svg+xml;
+
+        location /api/ {
+            proxy_pass http://{{ include "site24x7-labs.fullname" . }}-server:{{ .Values.server.httpPort }}/api/;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_connect_timeout 30s;
+            proxy_read_timeout 60s;
+            proxy_send_timeout 30s;
+        }
+
+        location /health {
+            proxy_pass http://{{ include "site24x7-labs.fullname" . }}-server:{{ .Values.server.httpPort }}/health;
+            proxy_set_header Host $host;
+            access_log off;
+        }
+
+        location /metrics {
+            proxy_pass http://{{ include "site24x7-labs.fullname" . }}-server:{{ .Values.server.httpPort }}/metrics;
+            proxy_set_header Host $host;
+            access_log off;
+        }
+
+        location /assets/ {
+            expires 1y;
+            add_header Cache-Control "public, immutable";
+            access_log off;
+        }
+
+        location / {
+            try_files $uri $uri/ /index.html;
+
+            location ~* \.html$ {
+                add_header Cache-Control "no-cache, no-store, must-revalidate";
+                add_header Pragma "no-cache";
+                add_header Expires "0";
+            }
+        }
+    }
+{{- end }}

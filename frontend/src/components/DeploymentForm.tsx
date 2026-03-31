@@ -3,7 +3,7 @@ import { createDeployment, DeploymentRequest } from "@/services/api";
 
 const TEMPLATE_MAP: Record<string, Record<string, string>> = {
   kubernetes: {
-    apm: "k8s-apm (Kubernetes + App + APM Agent)",
+    apm: "k8s-apm (ZylkerKart — Kubernetes + APM Agent)",
     network: "network (Network Deployment)",
     vmware: "vmware (VMware Deployment)",
   },
@@ -28,10 +28,15 @@ export default function DeploymentForm({ onCreated }: Props) {
     region: "us-east-1",
     instance_size: "medium",
     demo_duration_days: 7,
+    cloud_provider: "azure",
+    site24x7_license_key: "",
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+
+  const isK8sApm =
+    form.infrastructure === "kubernetes" && form.environment === "apm";
 
   const templatePreview =
     TEMPLATE_MAP[form.infrastructure]?.[form.environment] ?? "Unknown";
@@ -52,7 +57,12 @@ export default function DeploymentForm({ onCreated }: Props) {
     setError(null);
     setSuccess(false);
     try {
-      await createDeployment(form);
+      const payload: DeploymentRequest = { ...form };
+      if (!isK8sApm) {
+        delete payload.cloud_provider;
+        delete payload.site24x7_license_key;
+      }
+      await createDeployment(payload);
       setSuccess(true);
       setForm({
         ticket_id: "",
@@ -63,6 +73,8 @@ export default function DeploymentForm({ onCreated }: Props) {
         region: "us-east-1",
         instance_size: "medium",
         demo_duration_days: 7,
+        cloud_provider: "azure",
+        site24x7_license_key: "",
       });
       onCreated();
     } catch (err: unknown) {
@@ -175,6 +187,24 @@ export default function DeploymentForm({ onCreated }: Props) {
               <option value="vmware">VMware</option>
             </select>
           </div>
+
+          {isK8sApm && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Cloud Provider *
+              </label>
+              <select
+                name="cloud_provider"
+                value={form.cloud_provider}
+                onChange={handleChange}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                <option value="azure">Azure (AKS)</option>
+                <option value="aws">AWS (EKS)</option>
+              </select>
+            </div>
+          )}
+
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Instance Size
@@ -204,6 +234,23 @@ export default function DeploymentForm({ onCreated }: Props) {
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
           </div>
+
+          {isK8sApm && (
+            <div className="md:col-span-2">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Site24x7 License Key{" "}
+                <span className="text-gray-400 font-normal">(optional — enables APM monitoring)</span>
+              </label>
+              <input
+                type="text"
+                name="site24x7_license_key"
+                value={form.site24x7_license_key}
+                onChange={handleChange}
+                placeholder="Leave empty to skip APM agent installation"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+            </div>
+          )}
         </div>
 
         <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
@@ -212,6 +259,11 @@ export default function DeploymentForm({ onCreated }: Props) {
           </p>
           <p className="text-sm text-blue-600 mt-1 font-mono">
             {templatePreview}
+            {isK8sApm && form.cloud_provider && (
+              <span className="ml-2 text-blue-500">
+                [{form.cloud_provider === "azure" ? "Azure AKS" : "AWS EKS"}]
+              </span>
+            )}
           </p>
         </div>
 

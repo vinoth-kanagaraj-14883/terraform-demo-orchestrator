@@ -15,6 +15,11 @@ class EnvironmentType(str, Enum):
     vmware = "vmware"
 
 
+class CloudProvider(str, Enum):
+    azure = "azure"
+    aws = "aws"
+
+
 class DeploymentStatus(str, Enum):
     pending = "pending"
     planning = "planning"
@@ -34,6 +39,8 @@ class DeploymentRequest(BaseModel):
     region: Optional[str] = "us-east-1"
     instance_size: Optional[str] = "medium"
     demo_duration_days: Optional[int] = 7
+    cloud_provider: Optional[CloudProvider] = CloudProvider.azure
+    site24x7_license_key: Optional[str] = ""
 
 
 class DeploymentRecord(BaseModel):

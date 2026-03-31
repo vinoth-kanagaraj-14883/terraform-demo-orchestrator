@@ -9,6 +9,8 @@ export interface DeploymentRequest {
   region?: string;
   instance_size?: string;
   demo_duration_days?: number;
+  cloud_provider?: "azure" | "aws";
+  site24x7_license_key?: string;
 }
 
 export interface DeploymentRecord {

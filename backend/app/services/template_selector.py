@@ -1,5 +1,6 @@
 from pathlib import Path
-from app.models import InfrastructureType, EnvironmentType
+from typing import Optional
+from app.models import InfrastructureType, EnvironmentType, CloudProvider
 
 # Base directory for Terraform templates
 TEMPLATES_BASE = Path(__file__).parent.parent.parent.parent / "terraform" / "templates"
@@ -14,14 +15,24 @@ TEMPLATE_MAP = {
 }
 
 
-def select_template(infrastructure: InfrastructureType, environment: EnvironmentType) -> str:
+def select_template(
+    infrastructure: InfrastructureType,
+    environment: EnvironmentType,
+    cloud_provider: Optional[CloudProvider] = None,
+) -> tuple[str, dict]:
+    """Return (template_name, extra_variables) for the given selection."""
     key = (infrastructure, environment)
     template = TEMPLATE_MAP.get(key)
     if template is None:
         raise ValueError(
             f"No template found for infrastructure={infrastructure}, environment={environment}"
         )
-    return template
+
+    extra_vars: dict = {}
+    if template == "k8s-apm":
+        extra_vars["cloud_provider"] = (cloud_provider or CloudProvider.azure).value
+
+    return template, extra_vars
 
 
 def get_template_path(template_name: str) -> Path:

@@ -35,6 +35,13 @@ crash.log
 override.tf
 override.tf.json
 
+# Terraform k8s-apm runtime outputs (generated during deployment)
+terraform/templates/k8s-apm/.monitor_group_output.json
+terraform/templates/k8s-apm/.site24x7_env_output.json
+terraform/templates/k8s-apm/.site24x7_env_setup.log
+terraform/templates/k8s-apm/apm_monitors_state.json
+terraform/templates/k8s-apm/site24x7-labs/charts/*.tgz
+
 # IDE
 .vscode/
 .idea/
