@@ -1,60 +1,119 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# ZylkerKart — Terraform Providers
+# ─────────────────────────────────────────────────────────────────────────────
 terraform {
   required_version = ">= 1.5"
-  backend "local" {}
-}
 
-locals {
-  namespace     = "demo-${lower(replace(var.customer_name, " ", "-"))}"
-  app_name      = "demo-app-${var.deployment_id}"
-  apm_agent_ver = "13.0.0"
-}
-
-resource "null_resource" "k8s_namespace" {
-  triggers = {
-    deployment_id = var.deployment_id
-  }
-
-  provisioner "local-exec" {
-    command = "echo '[k8s-apm] Creating namespace ${local.namespace} for customer ${var.customer_name} in region ${var.region}'"
-  }
-}
-
-resource "null_resource" "k8s_app_deployment" {
-  depends_on = [null_resource.k8s_namespace]
-
-  triggers = {
-    deployment_id = var.deployment_id
-    instance_size = var.instance_size
-  }
-
-  provisioner "local-exec" {
-    command = "echo '[k8s-apm] Deploying application ${local.app_name} with instance size ${var.instance_size}'"
-  }
-}
-
-resource "null_resource" "apm_sidecar" {
-  depends_on = [null_resource.k8s_app_deployment]
-
-  triggers = {
-    deployment_id = var.deployment_id
-  }
-
-  provisioner "local-exec" {
-    command = "echo '[k8s-apm] Injecting APM sidecar agent v${local.apm_agent_ver} into ${local.app_name}'"
+  required_providers {
+    azurerm = {
+      source  = "hashicorp/azurerm"
+      version = "~> 3.100"
+    }
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.40"
+    }
+    kubernetes = {
+      source  = "hashicorp/kubernetes"
+      version = "~> 2.27"
+    }
+    helm = {
+      source  = "hashicorp/helm"
+      version = "~> 2.12"
+    }
+    http = {
+      source  = "hashicorp/http"
+      version = "~> 3.0"
+    }
+    tls = {
+      source  = "hashicorp/tls"
+      version = "~> 4.0"
+    }
+    external = {
+      source  = "hashicorp/external"
+      version = "~> 2.0"
+    }
   }
 }
 
-resource "local_file" "deployment_manifest" {
-  filename = "${path.module}/deployment-${var.deployment_id}.json"
-  content = jsonencode({
-    deployment_id = var.deployment_id
-    customer_name = var.customer_name
-    namespace     = local.namespace
-    app_name      = local.app_name
-    apm_version   = local.apm_agent_ver
-    region        = var.region
-    instance_size = var.instance_size
-    template_type = "k8s-apm"
-    status        = "deployed"
-  })
+# ── Azure Provider ──
+provider "azurerm" {
+  features {}
+  skip_provider_registration = true
+}
+
+# ── AWS Provider ──
+provider "aws" {
+  region = var.aws_region
+}
+
+# ── Kubernetes Provider (configured dynamically based on cloud) ──
+provider "kubernetes" {
+  host = var.cloud_provider == "azure" ? (
+    length(azurerm_kubernetes_cluster.aks) > 0 ? azurerm_kubernetes_cluster.aks[0].kube_config[0].host : ""
+    ) : (
+    length(aws_eks_cluster.eks) > 0 ? aws_eks_cluster.eks[0].endpoint : ""
+  )
+
+  cluster_ca_certificate = base64decode(
+    var.cloud_provider == "azure" ? (
+      length(azurerm_kubernetes_cluster.aks) > 0 ? azurerm_kubernetes_cluster.aks[0].kube_config[0].cluster_ca_certificate : ""
+      ) : (
+      length(aws_eks_cluster.eks) > 0 ? aws_eks_cluster.eks[0].certificate_authority[0].data : ""
+    )
+  )
+
+  # Azure uses client certificate auth
+  client_certificate = var.cloud_provider == "azure" ? (
+    length(azurerm_kubernetes_cluster.aks) > 0 ? base64decode(azurerm_kubernetes_cluster.aks[0].kube_config[0].client_certificate) : ""
+  ) : null
+
+  client_key = var.cloud_provider == "azure" ? (
+    length(azurerm_kubernetes_cluster.aks) > 0 ? base64decode(azurerm_kubernetes_cluster.aks[0].kube_config[0].client_key) : ""
+  ) : null
+
+  # AWS uses exec-based auth
+  dynamic "exec" {
+    for_each = var.cloud_provider == "aws" ? [1] : []
+    content {
+      api_version = "client.authentication.k8s.io/v1beta1"
+      command     = "aws"
+      args        = ["eks", "get-token", "--cluster-name", var.cluster_name]
+    }
+  }
+}
+
+provider "helm" {
+  kubernetes {
+    host = var.cloud_provider == "azure" ? (
+      length(azurerm_kubernetes_cluster.aks) > 0 ? azurerm_kubernetes_cluster.aks[0].kube_config[0].host : ""
+      ) : (
+      length(aws_eks_cluster.eks) > 0 ? aws_eks_cluster.eks[0].endpoint : ""
+    )
+
+    cluster_ca_certificate = base64decode(
+      var.cloud_provider == "azure" ? (
+        length(azurerm_kubernetes_cluster.aks) > 0 ? azurerm_kubernetes_cluster.aks[0].kube_config[0].cluster_ca_certificate : ""
+        ) : (
+        length(aws_eks_cluster.eks) > 0 ? aws_eks_cluster.eks[0].certificate_authority[0].data : ""
+      )
+    )
+
+    client_certificate = var.cloud_provider == "azure" ? (
+      length(azurerm_kubernetes_cluster.aks) > 0 ? base64decode(azurerm_kubernetes_cluster.aks[0].kube_config[0].client_certificate) : ""
+    ) : null
+
+    client_key = var.cloud_provider == "azure" ? (
+      length(azurerm_kubernetes_cluster.aks) > 0 ? base64decode(azurerm_kubernetes_cluster.aks[0].kube_config[0].client_key) : ""
+    ) : null
+
+    dynamic "exec" {
+      for_each = var.cloud_provider == "aws" ? [1] : []
+      content {
+        api_version = "client.authentication.k8s.io/v1beta1"
+        command     = "aws"
+        args        = ["eks", "get-token", "--cluster-name", var.cluster_name]
+      }
+    }
+  }
 }

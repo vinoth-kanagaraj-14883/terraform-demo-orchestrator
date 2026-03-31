@@ -18,12 +18,19 @@ router = APIRouter(prefix="/api/deployments", tags=["deployments"])
 
 
 def _build_variables(req: DeploymentRequest, deployment_id: str) -> dict:
-    return {
+    variables = {
         "deployment_id": deployment_id,
         "customer_name": req.customer_name,
         "region": req.region or "us-east-1",
         "instance_size": req.instance_size or "medium",
     }
+    if req.ticket_id:
+        variables["ticket_id"] = req.ticket_id
+    if req.cloud_provider:
+        variables["cloud_provider"] = req.cloud_provider.value
+    if req.site24x7_license_key:
+        variables["site24x7_license_key"] = req.site24x7_license_key
+    return variables
 
 
 def run_terraform_deploy(deployment_id: str, req: DeploymentRequest, template_name: str):
@@ -68,6 +75,12 @@ def run_terraform_destroy(deployment_id: str, req_data: dict):
         "region": req_data.get("region", "us-east-1"),
         "instance_size": req_data.get("instance_size", "medium"),
     }
+    if record.get("ticket_id"):
+        variables["ticket_id"] = record["ticket_id"]
+    if req_data.get("cloud_provider"):
+        variables["cloud_provider"] = req_data["cloud_provider"]
+    if req_data.get("site24x7_license_key"):
+        variables["site24x7_license_key"] = req_data["site24x7_license_key"]
 
     try:
         update_status(deployment_id, DeploymentStatus.destroying)
@@ -87,7 +100,9 @@ def run_terraform_destroy(deployment_id: str, req_data: dict):
 @router.post("/", response_model=DeploymentRecord, status_code=201)
 async def create_deployment(req: DeploymentRequest, background_tasks: BackgroundTasks):
     try:
-        template_name = select_template(req.infrastructure, req.environment)
+        template_name, extra_vars = select_template(
+            req.infrastructure, req.environment, req.cloud_provider
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
