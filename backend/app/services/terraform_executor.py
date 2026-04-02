@@ -29,12 +29,14 @@ class TerraformExecutor:
 
     def _run(self, args: list, cwd: Optional[Path] = None) -> subprocess.CompletedProcess:
         cmd = ["terraform"] + args
+        env = os.environ.copy()
         return subprocess.run(
             cmd,
             cwd=str(cwd or self.work_dir),
             capture_output=True,
             text=True,
             shell=self.is_windows,
+            env=env,
         )
 
     def init(self) -> subprocess.CompletedProcess:
