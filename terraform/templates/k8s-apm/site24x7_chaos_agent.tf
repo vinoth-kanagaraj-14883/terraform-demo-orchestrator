@@ -25,10 +25,23 @@ locals {
 # =============================================================================
 # Step 1 — Setup environment & obtain token + environment ID
 #           (PowerShell only — no Kubernetes resources here)
+#
+#   count gated by fileexists(): only runs when the output JSON file does NOT
+#   exist on disk.  When a previous run already created the file, count = 0
+#   skips this resource entirely, and the existing file is used as-is.
+#
+#   To force re-creation (e.g. after the remote environment was deleted),
+#   delete .site24x7_env_output.json and re-run terraform apply.
 # =============================================================================
 
 resource "terraform_data" "site24x7_env_setup" {
   depends_on = [terraform_data.k8s_ready]
+
+  # Only run when the output file from a previous setup does not yet exist.
+  # fileexists() is evaluated at plan time, avoiding the "count depends on
+  # resource attributes that cannot be determined until apply" error that
+  # occurred with the previous data.external approach.
+  count = fileexists(local.env_output_file) ? 0 : 1
 
   input = {
     server           = var.site24x7_server
@@ -318,6 +331,10 @@ resource "kubernetes_daemon_set_v1" "site24x7_agent" {
     kubernetes_secret.site24x7_agent_token,
     kubernetes_service_account.site24x7_agent,
     kubernetes_cluster_role_binding.site24x7_agent,
+    # Destroy ordering: chaos agent destroys before monitoring agents
+    kubernetes_daemonset.go_apm_exporter,
+    kubernetes_daemonset.site24x7_agent,
+    kubernetes_deployment.site24x7_ksm,
   ]
 
   metadata {

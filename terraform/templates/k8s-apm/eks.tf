@@ -169,7 +169,7 @@ resource "aws_eks_node_group" "default" {
 
   scaling_config {
     desired_size = var.node_count
-    max_size     = 5
+    max_size     = 3
     min_size     = 2
   }
 
@@ -258,6 +258,9 @@ resource "aws_eks_addon" "ebs_csi" {
     aws_eks_node_group.default,
     aws_iam_role_policy_attachment.ebs_csi,
     aws_iam_openid_connect_provider.eks,
+    # Destroy ordering: EBS CSI driver must stay alive until PVC is deleted,
+    # otherwise the CSI controller is gone and the PVC finalizer can never clear.
+    kubernetes_persistent_volume_claim.mysql_pvc,
   ]
 
   tags = {

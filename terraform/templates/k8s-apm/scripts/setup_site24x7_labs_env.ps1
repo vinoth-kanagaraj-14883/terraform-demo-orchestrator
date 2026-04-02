@@ -1,6 +1,6 @@
 param(
     [Parameter(Mandatory=$true)]
-    [string]$FrontendIP,
+    [string]${site24x7_server},
 
     [Parameter(Mandatory=$true)]
     [string]$EnvironmentName,
@@ -22,7 +22,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$baseUrl = "http://${FrontendIP}"
+$baseUrl = "http://${site24x7_server}"
 
 # ----------------------------------------------
 # 1. Wait for the API to be reachable
@@ -38,6 +38,7 @@ for ($i = 1; $i -le $MaxRetries; $i++) {
             -ContentType "application/json" `
             -Body $loginBody `
             -TimeoutSec 10
+        # If we get here without error the server is up
         Write-Host "  API is reachable! (attempt $i/$MaxRetries)" -ForegroundColor Green
         break
     } catch {
@@ -63,9 +64,14 @@ $loginResponse = Invoke-RestMethod -Uri "$baseUrl/api/v1/auth/login" `
     -ContentType "application/json" `
     -Body $loginBody
 
+# The API returns: { "success": true, "data": { "access_token": "...", ... } }
 $jwt = $loginResponse.data.access_token
-if (-not $jwt) { $jwt = $loginResponse.token }
-if (-not $jwt) { $jwt = $loginResponse.access_token }
+if (-not $jwt) {
+    $jwt = $loginResponse.token
+}
+if (-not $jwt) {
+    $jwt = $loginResponse.access_token
+}
 if (-not $jwt) {
     Write-Error "Login succeeded but no token in response: $($loginResponse | ConvertTo-Json -Compress)"
     exit 1
@@ -93,12 +99,16 @@ try {
     $statusCode = $_.Exception.Response.StatusCode.value__
     Write-Host "  Create returned HTTP $statusCode -- environment may already exist, attempting to fetch it..." -ForegroundColor Yellow
 
+    # List all environments and find the one matching our name
     $allEnvs = Invoke-RestMethod -Uri "$baseUrl/api/v1/environments/" `
         -Method GET `
         -Headers $headers
 
+    # Handle both { data: [...] } and direct array responses
     $envList = $allEnvs
-    if ($allEnvs.data) { $envList = $allEnvs.data }
+    if ($allEnvs.data) {
+        $envList = $allEnvs.data
+    }
 
     $envResponse = $envList | Where-Object { $_.name -eq $EnvironmentName } | Select-Object -First 1
 
@@ -110,37 +120,12 @@ try {
 }
 
 $agentToken = $envResponse.agent_token
-if (-not $agentToken) { $agentToken = $envResponse.data.agent_token }
+if (-not $agentToken) {
+    # Some API designs nest it differently -- try common alternatives
+    $agentToken = $envResponse.data.agent_token
+}
 if (-not $agentToken) {
     Write-Error "Environment created/found but no agent_token in response: $($envResponse | ConvertTo-Json -Compress -Depth 5)"
     exit 1
 }
 Write-Host "  Agent token: $($agentToken.Substring(0,20))..." -ForegroundColor Green
-
-# ----------------------------------------------
-# 4. Patch the Kubernetes secret with the new agent token
-# ----------------------------------------------
-Write-Host "Patching Kubernetes secret 'site24x7-labs-agent-secret' in namespace '$Namespace' ..." -ForegroundColor Cyan
-
-$encodedToken = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($agentToken))
-$patchJson = '{"data":{"AGENT_TOKEN":"' + $encodedToken + '"}}'
-
-kubectl patch secret site24x7-labs-agent-secret -n $Namespace --type=merge --patch $patchJson
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "  Warning: Could not patch secret (it may not exist yet)" -ForegroundColor Yellow
-} else {
-    Write-Host "  Secret patched successfully." -ForegroundColor Green
-}
-
-# ----------------------------------------------
-# 5. Restart the agent DaemonSet to pick up the new token
-# ----------------------------------------------
-Write-Host "Restarting agent DaemonSet ..." -ForegroundColor Cyan
-kubectl rollout restart daemonset/site24x7-labs-agent -n $Namespace 2>$null
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "  Warning: Could not restart DaemonSet (it may not exist yet)" -ForegroundColor Yellow
-} else {
-    Write-Host "  DaemonSet restart triggered." -ForegroundColor Green
-}
-
-Write-Host "SUCCESS: Site24x7 Labs environment '$EnvironmentName' is ready." -ForegroundColor Green
