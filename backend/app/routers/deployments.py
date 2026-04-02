@@ -10,11 +10,20 @@ from app.database import (
     list_deployments,
     update_status,
     update_deployment,
+    append_terraform_log,
+    get_terraform_logs,
 )
 from app.services.template_selector import select_template, get_template_path
 from app.services.terraform_executor import TerraformExecutor
 
 router = APIRouter(prefix="/api/deployments", tags=["deployments"])
+
+
+def _log_terraform_result(deployment_id: str, phase: str, result) -> None:
+    if result.stdout:
+        append_terraform_log(deployment_id, phase, "stdout", result.stdout)
+    if result.stderr:
+        append_terraform_log(deployment_id, phase, "stderr", result.stderr)
 
 
 def _build_variables(req: DeploymentRequest, deployment_id: str) -> dict:
@@ -41,15 +50,18 @@ def run_terraform_deploy(deployment_id: str, req: DeploymentRequest, template_na
     try:
         update_status(deployment_id, DeploymentStatus.planning)
         init_result = executor.init()
+        _log_terraform_result(deployment_id, "init", init_result)
         if init_result.returncode != 0:
             raise RuntimeError(f"terraform init failed:\n{init_result.stderr}")
 
         plan_result = executor.plan(variables)
+        _log_terraform_result(deployment_id, "plan", plan_result)
         if plan_result.returncode != 0:
             raise RuntimeError(f"terraform plan failed:\n{plan_result.stderr}")
 
         update_status(deployment_id, DeploymentStatus.applying)
         apply_result = executor.apply()
+        _log_terraform_result(deployment_id, "apply", apply_result)
         if apply_result.returncode != 0:
             raise RuntimeError(f"terraform apply failed:\n{apply_result.stderr}")
 
@@ -85,6 +97,7 @@ def run_terraform_destroy(deployment_id: str, req_data: dict):
     try:
         update_status(deployment_id, DeploymentStatus.destroying)
         destroy_result = executor.destroy(variables)
+        _log_terraform_result(deployment_id, "destroy", destroy_result)
         if destroy_result.returncode != 0:
             raise RuntimeError(f"terraform destroy failed:\n{destroy_result.stderr}")
 
@@ -151,6 +164,14 @@ async def destroy_deployment(deployment_id: str, background_tasks: BackgroundTas
         )
     background_tasks.add_task(run_terraform_destroy, deployment_id, record)
     return _row_to_record(record)
+
+
+@router.get("/{deployment_id}/logs")
+async def get_deployment_logs(deployment_id: str):
+    record = get_deployment(deployment_id)
+    if not record:
+        raise HTTPException(status_code=404, detail="Deployment not found")
+    return get_terraform_logs(deployment_id)
 
 
 def _row_to_record(row: dict) -> DeploymentRecord:

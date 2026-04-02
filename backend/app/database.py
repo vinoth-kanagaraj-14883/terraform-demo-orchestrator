@@ -34,6 +34,11 @@ def init_db():
         )
         """
     )
+    try:
+        conn.execute("ALTER TABLE deployments ADD COLUMN terraform_logs TEXT")
+        conn.commit()
+    except sqlite3.OperationalError:
+        pass
     conn.commit()
     conn.close()
 
@@ -128,3 +133,38 @@ def update_deployment(deployment_id: str, updates: dict):
     )
     conn.commit()
     conn.close()
+
+
+def append_terraform_log(deployment_id: str, phase: str, stream: str, text: str):
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT terraform_logs FROM deployments WHERE id = ?", (deployment_id,)
+    ).fetchone()
+    if row is None:
+        conn.close()
+        return
+    existing = json.loads(row["terraform_logs"]) if row["terraform_logs"] else []
+    entry = {
+        "phase": phase,
+        "stream": stream,
+        "text": text,
+        "timestamp": datetime.utcnow().isoformat(),
+    }
+    existing.append(entry)
+    conn.execute(
+        "UPDATE deployments SET terraform_logs = ? WHERE id = ?",
+        (json.dumps(existing), deployment_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def get_terraform_logs(deployment_id: str) -> list:
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT terraform_logs FROM deployments WHERE id = ?", (deployment_id,)
+    ).fetchone()
+    conn.close()
+    if row is None or not row["terraform_logs"]:
+        return []
+    return json.loads(row["terraform_logs"])

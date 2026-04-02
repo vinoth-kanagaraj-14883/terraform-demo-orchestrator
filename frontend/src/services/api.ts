@@ -78,3 +78,18 @@ export async function destroyDeployment(id: string): Promise<DeploymentRecord> {
   }
   return res.json();
 }
+
+export interface TerraformLogEntry {
+  phase: string;
+  stream: string;
+  text: string;
+  timestamp: string;
+}
+
+export async function getDeploymentLogs(
+  id: string
+): Promise<TerraformLogEntry[]> {
+  const res = await fetch(`${API_URL}/api/deployments/${id}/logs`);
+  if (!res.ok) throw new Error("Failed to fetch deployment logs");
+  return res.json();
+}

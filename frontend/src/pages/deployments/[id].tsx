@@ -1,8 +1,13 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/router";
 import Head from "next/head";
 import Link from "next/link";
-import { getDeployment, DeploymentRecord } from "@/services/api";
+import {
+  getDeployment,
+  getDeploymentLogs,
+  DeploymentRecord,
+  TerraformLogEntry,
+} from "@/services/api";
 
 const STATUS_COLORS: Record<string, string> = {
   pending: "bg-yellow-100 text-yellow-800",
@@ -18,15 +23,21 @@ export default function DeploymentDetail() {
   const router = useRouter();
   const { id } = router.query;
   const [deployment, setDeployment] = useState<DeploymentRecord | null>(null);
+  const [logs, setLogs] = useState<TerraformLogEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const logsEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!id || typeof id !== "string") return;
     const fetchData = async () => {
       try {
-        const data = await getDeployment(id);
+        const [data, logData] = await Promise.all([
+          getDeployment(id),
+          getDeploymentLogs(id),
+        ]);
         setDeployment(data);
+        setLogs(logData);
       } catch {
         setError("Deployment not found");
       } finally {
@@ -37,6 +48,12 @@ export default function DeploymentDetail() {
     const interval = setInterval(fetchData, 5000);
     return () => clearInterval(interval);
   }, [id]);
+
+  useEffect(() => {
+    if (logsEndRef.current) {
+      logsEndRef.current.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [logs]);
 
   if (loading) {
     return (
@@ -169,6 +186,45 @@ export default function DeploymentDetail() {
               <pre className="bg-red-50 border border-red-200 rounded-lg p-4 text-sm text-red-800 overflow-x-auto whitespace-pre-wrap">
                 {deployment.error_message}
               </pre>
+            </div>
+          )}
+
+          {(logs.length > 0 ||
+            ["planning", "applying", "destroying"].includes(
+              deployment.status
+            )) && (
+            <div className="bg-white rounded-xl shadow p-6">
+              <h2 className="text-lg font-bold text-gray-800 mb-3 flex items-center gap-2">
+                <span>⬛</span> Terraform Logs
+              </h2>
+              <div className="bg-gray-900 rounded-lg p-4 overflow-y-auto max-h-96 font-mono text-sm">
+                {logs.length === 0 ? (
+                  <p className="text-yellow-400">
+                    Waiting for terraform execution...
+                  </p>
+                ) : (
+                  logs.map((entry, idx) => (
+                    <div key={idx} className="whitespace-pre-wrap break-all">
+                      <span className="text-gray-500 text-xs">
+                        [{new Date(entry.timestamp).toLocaleTimeString()}]
+                      </span>{" "}
+                      <span className="text-blue-400 text-xs font-bold uppercase">
+                        [{entry.phase}]
+                      </span>{" "}
+                      <span
+                        className={
+                          entry.stream === "stderr"
+                            ? "text-red-400"
+                            : "text-green-400"
+                        }
+                      >
+                        {entry.text}
+                      </span>
+                    </div>
+                  ))
+                )}
+                <div ref={logsEndRef} />
+              </div>
             </div>
           )}
         </div>
