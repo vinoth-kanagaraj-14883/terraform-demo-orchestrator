@@ -29,6 +29,7 @@ yarn-error.log*
 *.tfstate.lock.info
 .terraform.lock.hcl
 tf-state/
+tf-workspaces/
 terraform.tfvars
 *.auto.tfvars
 crash.log
