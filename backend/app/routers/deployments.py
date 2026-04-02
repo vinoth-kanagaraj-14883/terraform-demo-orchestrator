@@ -84,15 +84,12 @@ def run_terraform_destroy(deployment_id: str, req_data: dict):
 
     try:
         update_status(deployment_id, DeploymentStatus.destroying)
-        init_result = executor.init()
-        if init_result.returncode != 0:
-            raise RuntimeError(f"terraform init failed:\n{init_result.stderr}")
-
         destroy_result = executor.destroy(variables)
         if destroy_result.returncode != 0:
             raise RuntimeError(f"terraform destroy failed:\n{destroy_result.stderr}")
 
         update_status(deployment_id, DeploymentStatus.destroyed)
+        executor.cleanup()
     except Exception as exc:
         update_status(deployment_id, DeploymentStatus.failed, str(exc))
 
