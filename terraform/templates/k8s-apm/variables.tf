@@ -11,6 +11,28 @@ variable "cloud_provider" {
   }
 }
 
+variable "deployment_id" {
+  description = "Unique deployment identifier"
+  type        = string
+}
+
+variable "customer_name" {
+  description = "Customer name"
+  type        = string
+}
+
+variable "region" {
+  description = "Deployment region (used by orchestrator)"
+  type        = string
+  default     = "us-east-1"
+}
+
+variable "instance_size" {
+  description = "Instance size (used by orchestrator)"
+  type        = string
+  default     = "medium"
+}
+
 variable "cluster_name" {
   description = "Name of the Kubernetes cluster"
   type        = string
